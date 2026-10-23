@@ -1,0 +1,50 @@
+# Local trial with Docker: PostgreSQL + the app in development mode,
+# with demo data and the on-screen test OTP code.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#   open http://localhost:3000   (admin: admin / Admin@12345)
+#
+# Stop with Ctrl+C. Remove data with: docker compose -f docker-compose.dev.yml down -v
+
+name: appointment-booking-dev
+
+services:
+  db:
+    image: ${REGISTRY:-}postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: booking
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: UTC
+    ports:
+      - "5434:5432" # reachable from the host for tools like Prisma Studio
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d booking"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      target: dev
+      args:
+        REGISTRY: ${REGISTRY:-}
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/booking?schema=public
+      AUTH_SECRET: dev-only-secret-dev-only-secret-dev-only
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: Admin@12345
+      SMS_PROVIDER: console
+      COOKIE_SECURE: "false"
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata-dev:

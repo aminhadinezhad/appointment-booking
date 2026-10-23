@@ -1,0 +1,176 @@
+// Data model for the consultation booking system.
+//
+// Invariants that Prisma cannot express are enforced in the migration SQL
+// (prisma/migrations/*/migration.sql):
+//   * partial unique index: one ACTIVE booking per (date, hour)
+//   * partial unique index: one ACTIVE booking per (userId, date)
+//   * CHECK constraints on hours and on the shape of each lock type
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum BookingStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum LockType {
+  FULL_DAY // one calendar date, 00:00–24:00
+  TIME_RANGE // one calendar date, [startHour, endHour)
+  WEEKLY // every given weekday, [startHour, endHour)
+}
+
+enum OtpPurpose {
+  LOGIN
+  REGISTER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  fullName     String
+  phone        String?  @unique // normalised 09xxxxxxxxx; null for admins without phone
+  username     String?  @unique // admin login only
+  passwordHash String? // admin login only
+  gender       Gender?
+  role         Role     @default(USER)
+  isActive     Boolean  @default(true)
+  notes        String? // "توضیحات کاربر", written by admins
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions          Session[]
+  bookings          Booking[]      @relation("BookingUser")
+  cancelledBookings Booking[]      @relation("BookingCancelledBy")
+  locksCreated      ScheduleLock[] @relation("LockCreatedBy")
+  locksUpdated      ScheduleLock[] @relation("LockUpdatedBy")
+  locksUnlocked     ScheduleLock[] @relation("LockUnlockedBy")
+  auditLogs         AuditLog[]
+
+  @@index([role, createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique // sha256 of the cookie token; the raw token is never stored
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model OtpCode {
+  id         String     @id @default(cuid())
+  phone      String
+  purpose    OtpPurpose
+  codeHash   String
+  payload    Json? // registration form data, applied when the code is verified
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([phone, purpose, createdAt])
+}
+
+// Fixed-window counters for throttling (keyed by e.g. "otp-ip:1.2.3.4").
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime
+}
+
+model Booking {
+  id            String        @id @default(cuid())
+  userId        String
+  date          DateTime      @db.Date // calendar date in Asia/Tehran
+  hour          Int // slot start hour, slot is [hour, hour + 1)
+  status        BookingStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+  // set on the new booking when it replaced an older one via reschedule
+  rescheduledFromId String? @unique
+
+  user            User     @relation("BookingUser", fields: [userId], references: [id], onDelete: Restrict)
+  cancelledBy     User?    @relation("BookingCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  rescheduledFrom Booking? @relation("Reschedule", fields: [rescheduledFromId], references: [id], onDelete: SetNull)
+  rescheduledTo   Booking? @relation("Reschedule")
+
+  @@index([date, status])
+  @@index([userId, date])
+  @@index([status, date])
+}
+
+model ScheduleLock {
+  id             String    @id @default(cuid())
+  type           LockType
+  date           DateTime? @db.Date // FULL_DAY and TIME_RANGE
+  weekday        Int? // WEEKLY: 0 = Sunday ... 6 = Saturday (JS convention)
+  startHour      Int // inclusive, 0..23
+  endHour        Int // exclusive, 1..24
+  reason         String?
+  isReasonPublic Boolean   @default(false)
+  isActive       Boolean   @default(true)
+  createdById    String
+  updatedById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  unlockedAt     DateTime?
+  unlockedById   String?
+  unlockReason   String?
+
+  createdBy  User  @relation("LockCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy  User? @relation("LockUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  unlockedBy User? @relation("LockUnlockedBy", fields: [unlockedById], references: [id], onDelete: SetNull)
+
+  @@index([isActive, type, date])
+  @@index([isActive, weekday])
+}
+
+// Single-row table (id = 1) with global booking settings.
+model Settings {
+  id             Int      @id @default(1)
+  bookableHours  Int[] // slot start hours that are open for booking in general
+  maxAdvanceDays Int      @default(60)
+  updatedAt      DateTime @updatedAt
+}
+
+// Append-only history of administrative and booking operations.
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String // e.g. LOCK_CREATED, LOCK_UNLOCKED, BOOKING_CANCELLED
+  entity    String // e.g. ScheduleLock, Booking, User
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId, createdAt])
+  @@index([createdAt])
+}
