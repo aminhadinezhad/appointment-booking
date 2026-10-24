@@ -42,6 +42,12 @@ enum OtpPurpose {
   REGISTER
 }
 
+enum ConsentContext {
+  ADMIN_PLATFORM_TERMS // admin accepted the software terms of use
+  REGISTER // customer accepted terms + privacy when registering
+  BOOKING // customer accepted terms + privacy when confirming a booking
+}
+
 model User {
   id           String   @id @default(cuid())
   fullName     String
@@ -56,12 +62,13 @@ model User {
   updatedAt    DateTime @updatedAt
 
   sessions          Session[]
-  bookings          Booking[]      @relation("BookingUser")
-  cancelledBookings Booking[]      @relation("BookingCancelledBy")
-  locksCreated      ScheduleLock[] @relation("LockCreatedBy")
-  locksUpdated      ScheduleLock[] @relation("LockUpdatedBy")
-  locksUnlocked     ScheduleLock[] @relation("LockUnlockedBy")
+  bookings          Booking[]       @relation("BookingUser")
+  cancelledBookings Booking[]       @relation("BookingCancelledBy")
+  locksCreated      ScheduleLock[]  @relation("LockCreatedBy")
+  locksUpdated      ScheduleLock[]  @relation("LockUpdatedBy")
+  locksUnlocked     ScheduleLock[]  @relation("LockUnlockedBy")
   auditLogs         AuditLog[]
+  consents          ConsentRecord[]
 
   @@index([role, createdAt])
 }
@@ -73,6 +80,7 @@ model Session {
   expiresAt DateTime
   createdAt DateTime @default(now())
   userAgent String?
+  ip        String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -102,18 +110,18 @@ model RateLimit {
 }
 
 model Booking {
-  id            String        @id @default(cuid())
-  userId        String
-  date          DateTime      @db.Date // calendar date in Asia/Tehran
-  hour          Int // slot start hour, slot is [hour, hour + 1)
-  status        BookingStatus @default(ACTIVE)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  cancelledAt   DateTime?
-  cancelledById String?
-  cancelReason  String?
+  id                String        @id @default(cuid())
+  userId            String
+  date              DateTime      @db.Date // calendar date in Asia/Tehran
+  hour              Int // slot start hour, slot is [hour, hour + 1)
+  status            BookingStatus @default(ACTIVE)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?
   // set on the new booking when it replaced an older one via reschedule
-  rescheduledFromId String? @unique
+  rescheduledFromId String?       @unique
 
   user            User     @relation("BookingUser", fields: [userId], references: [id], onDelete: Restrict)
   cancelledBy     User?    @relation("BookingCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
@@ -173,4 +181,24 @@ model AuditLog {
 
   @@index([entity, entityId, createdAt])
   @@index([createdAt])
+}
+
+// Append-only proof of consent: one row per accepted document version.
+model ConsentRecord {
+  id          String         @id @default(cuid())
+  userId      String
+  context     ConsentContext
+  document    String // PLATFORM_TERMS | TERMS | PRIVACY
+  version     Int
+  contentHash String // hash of the exact text that was accepted
+  bookingId   String?
+  ip          String?
+  userAgent   String?
+  acceptedAt  DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, document, version])
+  @@index([context, acceptedAt])
+  @@index([bookingId])
 }

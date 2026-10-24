@@ -13,7 +13,8 @@ export const POST = api(async (req) => {
   return requestOtp({
     phone: body.phone,
     purpose: body.purpose,
-    registration: body.purpose === "REGISTER" ? { fullName: body.fullName, gender: body.gender } : undefined,
+    registration:
+      body.purpose === "REGISTER" ? { fullName: body.fullName, gender: body.gender, acceptTerms: body.acceptTerms } : undefined,
     ip: clientIp(req),
   });
 });

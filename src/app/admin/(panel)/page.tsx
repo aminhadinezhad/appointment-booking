@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { dateKeyToDb, formatJalaliLong } from "@/lib/dates";
 import { toFaDigits } from "@/lib/digits";
 import { tehranParts } from "@/lib/time";
+import { requireAdminPage } from "@/server/auth/current";
 import { db } from "@/server/db";
 import { listAdminBookings } from "@/server/services/admin-bookings";
 
@@ -21,6 +22,8 @@ const TILES = [
 ] as const;
 
 export default async function AdminDashboardPage() {
+  // Layouts and pages render in parallel, so every page that reads data checks access itself.
+  await requireAdminPage();
   const today = tehranParts().dateKey;
   const [todayBookings, pending, users, activeLocks, keptInLocks] = await Promise.all([
     db.booking.count({ where: { date: dateKeyToDb(today), status: "ACTIVE" } }),

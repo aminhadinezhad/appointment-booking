@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { parseLegalText } from "@/lib/legal-text";
 import { normalizePhone } from "@/lib/phone";
 import {
+  bookingRequestSchema,
   createBookingSchema,
   fullNameSchema,
   lockInputSchema,
@@ -31,8 +33,8 @@ describe("normalizePhone", () => {
 
 describe("registration schema", () => {
   it("accepts and normalises valid input", () => {
-    const parsed = registerRequestSchema.parse({ fullName: "  علی   محمدی ", phone: "۰۹۱۲۱۲۳۴۵۶۷", gender: "MALE" });
-    expect(parsed).toEqual({ fullName: "علی محمدی", phone: "09121234567", gender: "MALE" });
+    const parsed = registerRequestSchema.parse({ fullName: "  علی   محمدی ", phone: "۰۹۱۲۱۲۳۴۵۶۷", gender: "MALE", acceptTerms: true });
+    expect(parsed).toEqual({ fullName: "علی محمدی", phone: "09121234567", gender: "MALE", acceptTerms: true });
   });
 
   it("rejects names with digits or symbols and too short names", () => {
@@ -44,7 +46,7 @@ describe("registration schema", () => {
   });
 
   it("requires a gender", () => {
-    const r = registerRequestSchema.safeParse({ fullName: "علی محمدی", phone: "09121234567" });
+    const r = registerRequestSchema.safeParse({ fullName: "علی محمدی", phone: "09121234567", acceptTerms: true });
     expect(r.success).toBe(false);
   });
 });
@@ -103,5 +105,34 @@ describe("settings", () => {
     });
     expect(settingsSchema.safeParse({ bookableHours: [24], maxAdvanceDays: 30 }).success).toBe(false);
     expect(settingsSchema.safeParse({ bookableHours: [], maxAdvanceDays: 0 }).success).toBe(false);
+  });
+});
+
+describe("consent", () => {
+  it("requires an explicit tick at registration", () => {
+    const base = { fullName: "علی محمدی", phone: "09121234567", gender: "MALE" };
+    expect(registerRequestSchema.safeParse({ ...base, acceptTerms: true }).success).toBe(true);
+    expect(registerRequestSchema.safeParse({ ...base, acceptTerms: false }).success).toBe(false);
+    expect(registerRequestSchema.safeParse(base).success).toBe(false);
+    expect(registerRequestSchema.safeParse({ ...base, acceptTerms: "true" }).success).toBe(false);
+    expect(bookingRequestSchema.safeParse({ date: "2026-10-25", hour: 9, acceptTerms: true }).success).toBe(true);
+    // at booking time consent is only needed after the texts change, so the flag is optional
+    expect(bookingRequestSchema.safeParse({ date: "2026-10-25", hour: 9 }).success).toBe(true);
+    expect(bookingRequestSchema.safeParse({ date: "2026-10-25", hour: 9, acceptTerms: "yes" }).success).toBe(false);
+  });
+});
+
+describe("legal text", () => {
+  it("parses headings, paragraphs and lists", () => {
+    expect(parseLegalText("## عنوان\nخط اول\nخط دوم\n\n- مورد ۱\n- مورد ۲\nپاراگراف")).toEqual([
+      { type: "heading", text: "عنوان" },
+      { type: "paragraph", text: "خط اول خط دوم" },
+      { type: "list", items: ["مورد ۱", "مورد ۲"] },
+      { type: "paragraph", text: "پاراگراف" },
+    ]);
+  });
+
+  it("treats markup-like input as plain text", () => {
+    expect(parseLegalText("<script>alert(1)</script>")).toEqual([{ type: "paragraph", text: "<script>alert(1)</script>" }]);
   });
 });

@@ -5,6 +5,7 @@ import { db, isUniqueViolation } from "../db";
 import { env } from "../env";
 import { AppError } from "../errors";
 import { enforceRateLimit, hitRateLimit, resetRateLimit } from "../rate-limit";
+import { acceptedVersionsOf, currentCustomerDocs, recordCustomerConsent, type AcceptedVersions } from "../services/legal";
 import { sendOtpSms } from "../sms";
 
 export const OTP_LENGTH = 5;
@@ -16,6 +17,9 @@ const OTP_MAX_PER_IP_PER_HOUR = 30;
 const VERIFY_MAX_PER_IP_PER_10_MIN = 40;
 
 export type RegistrationPayload = { fullName: string; gender: Gender };
+
+/** Stored with a registration code: form data plus the document versions the user accepted. */
+type StoredRegistration = RegistrationPayload & { accepted: AcceptedVersions };
 
 function hashCode(phone: string, purpose: OtpPurpose, code: string): string {
   return createHmac("sha256", env.authSecret).update(`${phone}:${purpose}:${code}`).digest("hex");
@@ -40,7 +44,8 @@ export interface OtpRequestResult {
 export async function requestOtp(input: {
   phone: string;
   purpose: OtpPurpose;
-  registration?: RegistrationPayload;
+  /** Required for REGISTER; the user must have ticked the terms checkbox. */
+  registration?: RegistrationPayload & { acceptTerms: boolean };
   ip: string;
 }): Promise<OtpRequestResult> {
   const { phone, purpose } = input;
@@ -54,11 +59,18 @@ export async function requestOtp(input: {
   } else {
     if (existing) throw new AppError("PHONE_ALREADY_REGISTERED");
     if (!input.registration) throw new AppError("VALIDATION");
+    if (input.registration.acceptTerms !== true) throw new AppError("TERMS_REQUIRED");
   }
 
   const cooldown = await hitRateLimit(`otp-cooldown:${purpose}:${phone}`, 1, OTP_RESEND_COOLDOWN_SECONDS);
   if (!cooldown.allowed) throw new AppError("OTP_COOLDOWN", { details: { retryAfterSec: cooldown.retryAfterSec } });
   await enforceRateLimit(`otp-phone:${phone}`, OTP_MAX_PER_PHONE_PER_HOUR, 3600);
+
+  // Versions shown to the user right now; recorded as accepted once the code is verified.
+  const stored: StoredRegistration | undefined =
+    purpose === "REGISTER"
+      ? { fullName: input.registration!.fullName, gender: input.registration!.gender, accepted: acceptedVersionsOf(currentCustomerDocs()) }
+      : undefined;
 
   const code = generateCode();
   const otp = await db.otpCode.create({
@@ -66,7 +78,7 @@ export async function requestOtp(input: {
       phone,
       purpose,
       codeHash: hashCode(phone, purpose, code),
-      payload: purpose === "REGISTER" ? input.registration : undefined,
+      payload: stored,
       expiresAt: new Date(Date.now() + OTP_TTL_SECONDS * 1000),
     },
   });
@@ -97,7 +109,13 @@ export async function requestOtp(input: {
  * Verifies a code and returns the logged-in (or newly registered) user.
  * Each code allows OTP_MAX_ATTEMPTS guesses and can be consumed only once.
  */
-export async function verifyOtp(input: { phone: string; purpose: OtpPurpose; code: string; ip: string }): Promise<User> {
+export async function verifyOtp(input: {
+  phone: string;
+  purpose: OtpPurpose;
+  code: string;
+  ip: string;
+  userAgent?: string | null;
+}): Promise<User> {
   const { phone, purpose, code } = input;
   await enforceRateLimit(`otp-verify-ip:${input.ip}`, VERIFY_MAX_PER_IP_PER_10_MIN, 600);
 
@@ -135,14 +153,21 @@ export async function verifyOtp(input: { phone: string; purpose: OtpPurpose; cod
     return user;
   }
 
-  const payload = otp.payload as RegistrationPayload | null;
-  if (!payload?.fullName || (payload.gender !== "MALE" && payload.gender !== "FEMALE")) {
+  const payload = otp.payload as StoredRegistration | null;
+  if (!payload?.fullName || (payload.gender !== "MALE" && payload.gender !== "FEMALE") || !payload.accepted) {
     throw new AppError("VALIDATION");
   }
   try {
     return await db.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: { phone, fullName: payload.fullName, gender: payload.gender, role: "USER" },
+      });
+      await recordCustomerConsent(tx, {
+        userId: user.id,
+        context: "REGISTER",
+        versions: payload.accepted,
+        ip: input.ip,
+        userAgent: input.userAgent,
       });
       await audit(tx, { actorId: user.id, action: "USER_REGISTERED", entity: "User", entityId: user.id });
       return user;

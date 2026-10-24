@@ -4,6 +4,7 @@ import { CalendarDays, Home, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
+import { SiteFooter } from "@/components/legal/site-footer";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -42,7 +43,10 @@ export function UserShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-4 pt-5 md:px-6 md:pt-8">{children}</div>
+      <div className="mx-auto max-w-5xl px-4 pt-5 md:px-6 md:pt-8">
+        {children}
+        <SiteFooter className="mt-6" />
+      </div>
 
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 backdrop-blur md:hidden" aria-label="منوی اصلی">
         <div className="mx-auto grid h-16 max-w-md grid-cols-3">

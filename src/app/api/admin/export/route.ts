@@ -8,7 +8,7 @@ import { dateKeySchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
-const SECTIONS = ["users", "bookings", "locks"] as const;
+const SECTIONS = ["users", "bookings", "locks", "consents"] as const;
 
 const querySchema = z.object({
   sections: z

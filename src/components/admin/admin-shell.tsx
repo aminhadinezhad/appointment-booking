@@ -18,6 +18,7 @@ import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 import { apiFetch, errorMessage } from "@/lib/api-client";
+import { SiteFooter } from "@/components/legal/site-footer";
 import { cn } from "@/lib/utils";
 
 export const ADMIN_NAV = [
@@ -113,7 +114,10 @@ export function AdminShell({ adminName, children }: { adminName: string; childre
         </div>
       )}
 
-      <main className="min-w-0 px-4 pb-24 pt-5 md:px-6 lg:px-8 lg:pb-10 lg:pt-8">{children}</main>
+      <main className="min-w-0 px-4 pb-24 pt-5 md:px-6 lg:px-8 lg:pb-10 lg:pt-8">
+        {children}
+        <SiteFooter variant="admin" className="mt-8" />
+      </main>
 
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 backdrop-blur lg:hidden" aria-label="منوی پایین">
         <div className="grid h-16 grid-cols-5">

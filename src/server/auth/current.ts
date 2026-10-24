@@ -4,6 +4,7 @@ import { cache } from "react";
 import type { Role } from "@prisma/client";
 import { env } from "../env";
 import { AppError } from "../errors";
+import { hasAcceptedPlatformTerms } from "../services/legal";
 import { getUserBySessionToken, type SessionUser } from "./sessions";
 
 /** Separate cookies so a user and an admin session can coexist in one browser. */
@@ -42,9 +43,17 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-export async function requireAdmin(): Promise<SessionUser> {
+/** Whether the admin accepted the current software terms (cached per request). */
+export const adminAcceptedTerms = cache((userId: string) => hasAcceptedPlatformTerms(userId));
+
+/**
+ * For admin API handlers. Until the current software terms are accepted, every
+ * admin endpoint is refused, except those that opt in with allowPendingTerms.
+ */
+export async function requireAdmin(options: { allowPendingTerms?: boolean } = {}): Promise<SessionUser> {
   const admin = await getCurrentUser("ADMIN");
   if (!admin) throw new AppError("UNAUTHORIZED");
+  if (!options.allowPendingTerms && !(await adminAcceptedTerms(admin.id))) throw new AppError("TERMS_NOT_ACCEPTED");
   return admin;
 }
 
@@ -55,8 +64,9 @@ export async function requireUserPage(): Promise<SessionUser> {
   return user;
 }
 
-export async function requireAdminPage(): Promise<SessionUser> {
+export async function requireAdminPage(options: { allowPendingTerms?: boolean } = {}): Promise<SessionUser> {
   const admin = await getCurrentUser("ADMIN");
   if (!admin) redirect("/admin/login");
+  if (!options.allowPendingTerms && !(await adminAcceptedTerms(admin.id))) redirect("/admin/terms");
   return admin;
 }

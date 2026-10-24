@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { dateKeyToDb, dbToDateKey, formatJalaliPlain, formatRange, WEEKDAY_NAMES, weekdayOf, type DateKey } from "@/lib/dates";
 import { pad2, toEnDigits } from "@/lib/digits";
+import { CONSENT_CONTEXT_LABELS, LEGAL_DOCUMENT_LABELS } from "@/lib/legal-text";
 import { LOCK_TYPE_LABELS, describeLockScope } from "@/lib/locks";
 import { locksCoveringSlot } from "@/lib/slots";
 import { tehranParts } from "@/lib/time";
@@ -8,7 +9,7 @@ import { db } from "../db";
 import { displayStatusOf, type BookingDisplayStatus, type Clock } from "./bookings";
 import { activeLocksForRange, toLockRule } from "./schedule-data";
 
-export type ExportSection = "users" | "bookings" | "locks";
+export type ExportSection = "users" | "bookings" | "locks" | "consents";
 
 const STATUS_LABELS: Record<BookingDisplayStatus, string> = {
   UPCOMING: "ثبت شده (در انتظار)",
@@ -186,6 +187,47 @@ export async function buildExportWorkbook(
         unlockedBy: l.unlockedBy?.fullName ?? "",
         unlockedAt: stamp(l.unlockedAt),
         unlockReason: l.unlockReason ?? "",
+      });
+    });
+    finishSheet(sheet);
+  }
+
+  if (options.sections.includes("consents")) {
+    const consents = await db.consentRecord.findMany({
+      include: { user: { select: { fullName: true, phone: true, username: true, role: true } } },
+      orderBy: { acceptedAt: "asc" },
+    });
+    const sheet = addSheet(workbook, "سوابق پذیرش قوانین", [
+      { header: "ردیف", key: "row", width: 7 },
+      { header: "نام", key: "name", width: 24 },
+      { header: "موبایل / نام کاربری", key: "identity", width: 18 },
+      { header: "نقش", key: "role", width: 9 },
+      { header: "موقعیت پذیرش", key: "context", width: 24 },
+      { header: "سند", key: "document", width: 24 },
+      { header: "نسخه", key: "version", width: 8 },
+      { header: "تاریخ", key: "date", width: 13 },
+      { header: "ساعت", key: "time", width: 9 },
+      { header: "نشانی IP", key: "ip", width: 16 },
+      { header: "مرورگر", key: "ua", width: 40 },
+      { header: "شناسه رزرو", key: "booking", width: 28 },
+      { header: "هش متن پذیرفته‌شده (SHA-256)", key: "hash", width: 66 },
+    ]);
+    consents.forEach((c, i) => {
+      const at = tehranDateTime(c.acceptedAt);
+      sheet.addRow({
+        row: i + 1,
+        name: c.user.fullName,
+        identity: c.user.phone ?? c.user.username ?? "",
+        role: c.user.role === "ADMIN" ? "مدیر" : "کاربر",
+        context: CONSENT_CONTEXT_LABELS[c.context] ?? c.context,
+        document: LEGAL_DOCUMENT_LABELS[c.document] ?? c.document,
+        version: c.version,
+        date: at.date,
+        time: at.time,
+        ip: c.ip ?? "",
+        ua: c.userAgent ?? "",
+        booking: c.bookingId ?? "",
+        hash: c.contentHash,
       });
     });
     finishSheet(sheet);

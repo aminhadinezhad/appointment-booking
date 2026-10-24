@@ -14,7 +14,8 @@ export type AuditAction =
   | "LOCK_UNLOCKED"
   | "LOCK_REACTIVATED"
   | "SETTINGS_UPDATED"
-  | "ADMIN_PASSWORD_CHANGED";
+  | "ADMIN_PASSWORD_CHANGED"
+  | "PLATFORM_TERMS_ACCEPTED";
 
 export async function audit(
   tx: Tx,

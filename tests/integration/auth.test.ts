@@ -10,7 +10,7 @@ import { createUser, expectAppError } from "./helpers";
 
 const PHONE = "09121112233";
 const IP = "10.0.0.1";
-const registration = { fullName: "سارا رضایی", gender: "FEMALE" as const };
+const registration = { fullName: "سارا رضایی", gender: "FEMALE" as const, acceptTerms: true };
 
 afterEach(() => {
   vi.unstubAllEnvs();

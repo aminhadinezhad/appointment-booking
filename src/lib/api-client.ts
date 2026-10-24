@@ -38,6 +38,9 @@ export async function apiFetch<T>(url: string, options: Options = {}): Promise<T
       const loginPath = window.location.pathname.startsWith("/admin") ? "/admin/login" : "/login";
       if (window.location.pathname !== loginPath) window.location.assign(loginPath);
     }
+    if (res.status === 403 && err?.code === "TERMS_NOT_ACCEPTED" && typeof window !== "undefined") {
+      window.location.assign("/admin/terms");
+    }
     throw new ApiError(err?.message ?? "خطای غیرمنتظره‌ای رخ داد", res.status, err?.code ?? "UNKNOWN", err?.fields, err?.details);
   }
   return data as T;

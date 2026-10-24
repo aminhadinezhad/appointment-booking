@@ -17,12 +17,13 @@ const SECTIONS = [
   { key: "users", label: "کاربران", description: "نام، موبایل، جنسیت، وضعیت و تاریخ ثبت‌نام" },
   { key: "bookings", label: "رزروها", description: "تاریخ و ساعت جلسه، کاربر، وضعیت، لغو و هشدار قفل" },
   { key: "locks", label: "قفل‌ها و تعطیلی‌ها", description: "محدوده، دلیل، وضعیت، ایجادکننده و بازگشایی" },
+  { key: "consents", label: "سوابق پذیرش قوانین", description: "چه کسی، چه زمانی و از چه IP کدام نسخه از قوانین را پذیرفته است" },
 ] as const;
 
 type Section = (typeof SECTIONS)[number]["key"];
 
 export default function ExportPage() {
-  const [sections, setSections] = React.useState<Section[]>(["users", "bookings", "locks"]);
+  const [sections, setSections] = React.useState<Section[]>(["users", "bookings", "locks", "consents"]);
   const [from, setFrom] = React.useState<string | null>(null);
   const [to, setTo] = React.useState<string | null>(null);
   const [downloading, setDownloading] = React.useState(false);

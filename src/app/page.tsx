@@ -1,6 +1,7 @@
 import { CalendarClock } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SiteFooter } from "@/components/legal/site-footer";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/server/auth/current";
 
@@ -27,6 +28,7 @@ export default async function LandingPage() {
       <Link href="/admin/login" className="mt-12 text-xs text-muted-foreground/80 hover:text-primary">
         ورود مدیر سامانه
       </Link>
+      <SiteFooter className="mt-2" />
     </main>
   );
 }

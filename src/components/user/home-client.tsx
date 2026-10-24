@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 import { JalaliCalendar, type CalendarDayProps } from "@/components/jalali-calendar";
+import { TermsLink } from "@/components/legal/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -15,7 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { SlotGrid, SlotLegend } from "@/components/user/slot-grid";
 import { apiFetch, ApiError, errorMessage, toQuery } from "@/lib/api-client";
 import { formatJalaliLong, formatSlot, shiftJalaliMonth, toJalali } from "@/lib/dates";
-import type { Booking, DaySummary, SlotView } from "@/lib/types";
+import type { Booking, DaySummary, Me, SlotView } from "@/lib/types";
 
 const REFRESH_CODES = new Set(["SLOT_TAKEN", "SLOT_LOCKED", "SLOT_IN_PAST", "SLOT_NOT_BOOKABLE", "ONE_BOOKING_PER_DAY", "BOOKING_NOT_ACTIVE"]);
 
@@ -56,6 +57,9 @@ export function HomeClient({
     enabled: !!rescheduleId,
   });
   const rescheduleTarget = rescheduling.data?.booking.canModify ? rescheduling.data.booking : null;
+  // Customers accept the texts at registration; the notice is shown again only after the business updates them.
+  const me = useQuery({ queryKey: ["me"], queryFn: () => apiFetch<Me>("/api/me") });
+  const needsConsent = me.data?.termsUpToDate === false;
 
   const summaries = React.useMemo(() => new Map(calendar.data?.days.map((d) => [d.dateKey, d])), [calendar.data]);
   const daySummary = summaries.get(selected);
@@ -70,15 +74,24 @@ export function HomeClient({
   };
 
   const mutation = useMutation({
-    mutationFn: (slot: SlotView) =>
-      moving
-        ? apiFetch<{ booking: Booking }>(`/api/bookings/${moving.id}/reschedule`, { body: { date: selected, hour: slot.hour } })
-        : apiFetch<{ booking: Booking }>("/api/bookings", { body: { date: selected, hour: slot.hour } }),
+    mutationFn: (slot: SlotView) => {
+      const body = { date: selected, hour: slot.hour, ...(needsConsent ? { acceptTerms: true } : {}) };
+      return moving
+        ? apiFetch<{ booking: Booking }>(`/api/bookings/${moving.id}/reschedule`, { body })
+        : apiFetch<{ booking: Booking }>("/api/bookings", { body });
+    },
     onSuccess: ({ booking }) => {
       refresh();
+      if (needsConsent) void queryClient.invalidateQueries({ queryKey: ["me"] });
       router.push(`/bookings/${booking.id}/confirmed${moving ? "?changed=1" : ""}`);
     },
     onError: (error) => {
+      if (error instanceof ApiError && error.code === "TERMS_UPDATED") {
+        // The texts changed while the page was open: keep the dialog and show the notice.
+        void me.refetch();
+        toast.info(error.message);
+        return;
+      }
       toast.error(errorMessage(error));
       setPending(null);
       if (error instanceof ApiError && REFRESH_CODES.has(error.code)) refresh();
@@ -228,6 +241,12 @@ export function HomeClient({
                 <dd className="font-semibold">{formatSlot(pending.hour)}</dd>
               </div>
             </dl>
+          )}
+          {needsConsent && (
+            <p className="rounded-lg bg-primary-soft px-3 py-2 text-xs leading-6 text-foreground">
+              قوانین و مقررات یا حریم خصوصی به‌روزرسانی شده است. با ثبت نوبت، نسخه جدید <TermsLink href="/terms">قوانین و مقررات</TermsLink> و{" "}
+              <TermsLink href="/privacy">حریم خصوصی</TermsLink> را می‌پذیرم.
+            </p>
           )}
           <DialogFooter>
             <Button onClick={() => pending && mutation.mutate(pending)} loading={mutation.isPending} className="sm:min-w-32">

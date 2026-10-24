@@ -62,10 +62,16 @@ const weekdaySchema = z.preprocess(
 
 export const loginRequestSchema = z.object({ phone: phoneSchema });
 
+/** Consent must be an explicit, user-made choice (the checkbox starts unticked). */
+export const acceptTermsSchema = z
+  .boolean({ required_error: "برای ادامه باید قوانین و مقررات و حریم خصوصی را بپذیرید" })
+  .refine((v) => v === true, "برای ادامه باید قوانین و مقررات و حریم خصوصی را بپذیرید");
+
 export const registerRequestSchema = z.object({
   fullName: fullNameSchema,
   phone: phoneSchema,
   gender: genderSchema,
+  acceptTerms: acceptTermsSchema,
 });
 
 export const otpVerifySchema = z.object({
@@ -101,6 +107,9 @@ export const changePasswordSchema = z
 // ---------------------------------------------------------------- bookings
 
 export const createBookingSchema = z.object({ date: dateKeySchema, hour: slotHourSchema });
+
+/** acceptTerms is sent only when the UI showed the updated-terms notice (see resolveBookingConsent). */
+export const bookingRequestSchema = createBookingSchema.extend({ acceptTerms: z.boolean().optional() });
 
 export const cancelBookingSchema = z.object({
   reason: z.string().trim().max(300, "حداکثر ۳۰۰ کاراکتر").optional(),
@@ -222,4 +231,9 @@ export const adminUserUpdateSchema = z
 export const jalaliMonthQuerySchema = z.object({
   jy: z.preprocess(intFrom, z.number().int().min(1300).max(1500)),
   jm: z.preprocess(intFrom, z.number().int().min(1).max(12)),
+});
+
+export const acceptPlatformTermsSchema = z.object({
+  version: z.number().int().min(1),
+  accept: z.literal(true, { errorMap: () => ({ message: "برای ادامه باید شرایط استفاده را بپذیرید" }) }),
 });

@@ -28,11 +28,18 @@ function hashToken(token: string): string {
 export async function createSession(
   user: Pick<User, "id" | "role">,
   userAgent?: string | null,
+  ip?: string | null,
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS[user.role]);
   await db.session.create({
-    data: { tokenHash: hashToken(token), userId: user.id, expiresAt, userAgent: userAgent?.slice(0, 300) ?? null },
+    data: {
+      tokenHash: hashToken(token),
+      userId: user.id,
+      expiresAt,
+      userAgent: userAgent?.slice(0, 300) ?? null,
+      ip: ip?.slice(0, 64) ?? null,
+    },
   });
   return { token, expiresAt };
 }

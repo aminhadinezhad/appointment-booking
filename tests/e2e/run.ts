@@ -7,18 +7,37 @@
  * Everything the scenario creates (users, bookings, locks, logs) is removed at the end.
  * Requires the dev SMS provider (console), because it reads the test OTP from the page.
  */
+import { randomBytes } from "node:crypto";
+import { readdirSync } from "node:fs";
+import path from "node:path";
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { addDays, dateKeyToDb, formatJalali, formatJalaliLong } from "../../src/lib/dates";
 import { toFaDigits } from "../../src/lib/digits";
 import { tehranParts } from "../../src/lib/time";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
-const ADMIN_USER = process.env.ADMIN_USERNAME ?? "admin";
-const ADMIN_PASS = process.env.ADMIN_PASSWORD ?? "Admin@12345";
+// A throwaway admin per run, so the first-login terms gate is exercised every time.
+const ADMIN_USER = `e2e-admin-${randomBytes(4).toString("hex")}`;
+const ADMIN_PASS = randomBytes(12).toString("base64url");
 const db = new PrismaClient();
-const created = { phones: [] as string[], lockIds: [] as string[] };
+const created = { phones: [] as string[], lockIds: [] as string[], adminIds: [] as string[] };
 let failures = 0;
+function apiRoutes(dir = path.join(process.cwd(), "src", "app", "api"), prefix = "/api"): string[] {
+  const routes: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isFile() && /^route\.tsx?$/.test(entry.name)) routes.push(prefix);
+    if (entry.isDirectory()) {
+      const segment = entry.name.startsWith("[") ? "x" : entry.name;
+      routes.push(...apiRoutes(path.join(dir, entry.name), `${prefix}/${segment}`));
+    }
+  }
+  return routes;
+}
+
+/** Pages whose state is printed when a step fails. */
+const watchedPages: Record<string, Page> = {};
 
 function randomPhone() {
   return `0990${String(Math.floor(Math.random() * 10_000_000)).padStart(7, "0")}`;
@@ -32,6 +51,10 @@ async function step(name: string, fn: () => Promise<void>) {
   } catch (error) {
     failures++;
     console.error(`  ✗ ${name}\n    ${(error as Error).message.split("\n").slice(0, 6).join("\n    ")}`);
+    for (const [label, page] of Object.entries(watchedPages)) {
+      const text = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+      console.error(`    [${label}] ${page.url()}\n      ${text.replace(/\s+/g, " ").slice(0, 220)}`);
+    }
     throw error;
   }
 }
@@ -80,6 +103,9 @@ async function register(page: Page, name: string, phone: string, gender: "زن" 
   await page.getByLabel("نام و نام خانوادگی").fill(name);
   await page.getByLabel("شماره موبایل").fill(phone);
   await page.locator("label", { hasText: gender }).first().click();
+  const consent = page.getByRole("checkbox", { name: /قوانین و مقررات/ });
+  if (await consent.isChecked()) throw new Error("the consent checkbox must start unticked");
+  await consent.check();
   await page.getByRole("button", { name: "ثبت‌نام" }).click();
   const hint = page.getByText("حالت آزمایشی");
   await hint.waitFor({ timeout: 30_000 });
@@ -90,6 +116,24 @@ async function register(page: Page, name: string, phone: string, gender: "زن" 
 async function main() {
   const health = await fetch(`${BASE}/api/health`).catch(() => null);
   if (!health?.ok) throw new Error(`App is not reachable at ${BASE}. Start it with "npm run dev".`);
+
+  // The dev server compiles each route on first request; warm them up so the
+  // scenario's timeouts measure the app, not the compiler.
+  const warmUp = ["/", "/register", "/login", "/home", "/bookings", "/bookings/x", "/bookings/x/confirmed", "/bookings/x/cancelled", "/profile", "/terms", "/privacy", "/platform-terms", "/admin/login", "/admin/terms", "/admin", "/admin/schedule", "/admin/bookings", "/admin/users", "/admin/reports", "/admin/export", "/admin/settings"];
+  // One at a time: the dev compiler works sequentially anyway, and parallel
+  // requests only make the later ones time out.
+  for (const path of warmUp) {
+    await fetch(`${BASE}${path}`, {
+      redirect: "manual",
+      // placeholder cookies get past the middleware so protected routes are compiled too
+      headers: { cookie: "bk_session=warmup; bk_admin=warmup" },
+      signal: AbortSignal.timeout(180_000),
+    }).catch(() => null);
+  }
+  // Every API route, discovered from src/app/api ([id] segments become "x").
+  for (const path of apiRoutes()) {
+    await fetch(`${BASE}${path}`, { signal: AbortSignal.timeout(180_000) }).catch(() => null);
+  }
 
   const hour = 10;
   const date = await pickFreeSlot(hour);
@@ -108,6 +152,7 @@ async function main() {
   const user = await userCtx.newPage();
   const other = await otherCtx.newPage();
   const admin = await adminCtx.newPage();
+  Object.assign(watchedPages, { user, other, admin });
   const phoneA = randomPhone();
   const phoneB = randomPhone();
   created.phones.push(phoneA, phoneB);
@@ -122,6 +167,7 @@ async function main() {
       await page.getByRole("button", { name: "ثبت‌نام" }).click();
       await page.getByText("شماره موبایل معتبر نیست").waitFor();
       await page.getByText("جنسیت را انتخاب کنید").waitFor();
+      await page.getByText("برای ادامه باید قوانین و مقررات و حریم خصوصی را بپذیرید").waitFor();
       await page.close();
     });
 
@@ -129,9 +175,14 @@ async function main() {
       await user.goto(`${BASE}/home?date=${date}`);
       await user.getByRole("button", { name: new RegExp(`${toFaDigits("10:00")} تا ${toFaDigits("11:00")}، قابل رزرو`) }).click();
       await user.getByRole("dialog").getByText(formatJalaliLong(date)).waitFor();
+      // accepted at registration, so no terms notice when booking
+      expect(!(await user.getByRole("dialog").getByText(/به‌روزرسانی شده است/).count()), "no terms notice expected when booking");
       await user.getByRole("button", { name: "تأیید رزرو" }).click();
       await user.waitForURL(/\/bookings\/.+\/confirmed/, { timeout: 30_000 });
       await user.getByText("رزرو با موفقیت ثبت شد").waitFor();
+      const consents = await db.consentRecord.findMany({ where: { user: { phone: phoneA } } });
+      const contexts = consents.map((c) => `${c.context}:${c.document}`).sort().join();
+      expect(contexts === "REGISTER:PRIVACY,REGISTER:TERMS", `only the registration consent is expected, got ${contexts}`);
     });
 
     await step("the same day cannot get a second booking (moves instead)", async () => {
@@ -147,12 +198,39 @@ async function main() {
       await other.getByRole("button", { name: new RegExp(`${toFaDigits("10:00")} تا ${toFaDigits("11:00")}، رزرو شده`) }).waitFor();
     });
 
-    await step("admin logs in", async () => {
+    await step("admin pages send no data without a valid session", async () => {
+      for (const path of ["/admin", "/admin/bookings", "/admin/schedule"]) {
+        const html = await (await fetch(`${BASE}${path}`, { headers: { cookie: "bk_admin=forged-token" } })).text();
+        expect(!html.includes("رزروهای امروز") && !html.includes("قفل‌های فعال"), `${path} leaked panel content to a forged session`);
+      }
+    });
+
+    await step("new admin must accept the software terms before the panel opens", async () => {
+      const row = await db.user.create({
+        data: { fullName: "مدیر آزمون", username: ADMIN_USER, role: "ADMIN", passwordHash: await bcrypt.hash(ADMIN_PASS, 10) },
+      });
+      created.adminIds.push(row.id);
       await admin.goto(`${BASE}/admin/login`);
       await admin.getByLabel("نام کاربری").fill(ADMIN_USER);
       await admin.getByLabel("رمز عبور").fill(ADMIN_PASS);
       await admin.getByRole("button", { name: "ورود" }).click();
+      await admin.waitForURL(`${BASE}/admin/terms`, { timeout: 30_000 });
+      // the panel and the admin API stay closed until acceptance
+      const blocked = await admin.request.get(`${BASE}/api/admin/users`);
+      expect(blocked.status() === 403, `admin API must be blocked before acceptance, got ${blocked.status()}`);
+      const dashboardHtml = await (await admin.request.get(`${BASE}/admin`)).text();
+      expect(!dashboardHtml.includes("رزروهای امروز"), "dashboard data must not be sent before acceptance");
+      await admin.goto(`${BASE}/admin/schedule`);
+      await admin.waitForURL(`${BASE}/admin/terms`);
+      const accept = admin.getByRole("button", { name: "پذیرش و ادامه" });
+      expect(await accept.isDisabled(), "continue must be disabled until the box is ticked");
+      const box = admin.getByRole("checkbox", { name: /مجوزهای قانونی لازم/ });
+      expect(!(await box.isChecked()), "the box must start unticked");
+      await box.check();
+      await accept.click();
       await admin.waitForURL(`${BASE}/admin`, { timeout: 30_000 });
+      const record = await db.consentRecord.findFirst({ where: { userId: row.id, document: "PLATFORM_TERMS" } });
+      expect(record?.ip && record.userAgent && record.contentHash.length === 64, "acceptance must be recorded with IP, browser and hash");
     });
 
     await step("admin locks the range and is warned about the existing booking", async () => {
@@ -219,6 +297,8 @@ async function main() {
       await user.getByRole("link", { name: "تغییر ساعت" }).click();
       await user.getByText("در حال تغییر ساعت رزرو").waitFor();
       await user.getByRole("button", { name: new RegExp(`${toFaDigits("11:00")} تا ${toFaDigits("12:00")}، قابل رزرو`) }).click();
+      await user.getByRole("dialog").getByText(formatJalaliLong(date), { exact: true }).waitFor();
+      expect(!(await user.getByRole("dialog").getByText(/به‌روزرسانی شده است/).count()), "no terms notice expected: the texts did not change");
       await user.getByRole("button", { name: "تأیید تغییر ساعت" }).click();
       await user.waitForURL(/\/confirmed\?changed=1/, { timeout: 30_000 });
       await user.getByText("ساعت رزرو با موفقیت تغییر کرد").waitFor();
@@ -237,6 +317,24 @@ async function main() {
       expect(row.status === "CANCELLED", "booking should be cancelled");
     });
 
+    await step("legal pages are public and linked from every page", async () => {
+      const page = await otherCtx.newPage();
+      const pages = [
+        ["/terms", "قوانین و مقررات"],
+        ["/privacy", "حریم خصوصی"],
+        ["/platform-terms", "شرایط استفاده از نرم‌افزار سامانه رزرو نوبت"],
+      ] as const;
+      for (const [path, title] of pages) {
+        await page.goto(`${BASE}${path}`);
+        await page.getByRole("heading", { level: 1, name: title }).waitFor();
+      }
+      for (const path of ["/", "/login", "/home"]) {
+        await page.goto(`${BASE}${path}`);
+        await page.getByRole("contentinfo").getByRole("link", { name: "حریم خصوصی" }).waitFor();
+      }
+      await page.close();
+    });
+
     await step("admin pages render without client errors", async () => {
       for (const path of ["/admin", "/admin/users", "/admin/reports", "/admin/export", "/admin/settings"]) {
         await admin.goto(`${BASE}${path}`);
@@ -251,7 +349,7 @@ async function main() {
 
 async function cleanup() {
   const users = await db.user.findMany({ where: { phone: { in: created.phones } }, select: { id: true } });
-  const userIds = users.map((u) => u.id);
+  const userIds = [...users.map((u) => u.id), ...created.adminIds];
   const bookingIds = (await db.booking.findMany({ where: { userId: { in: userIds } }, select: { id: true } })).map((b) => b.id);
   await db.$transaction([
     db.auditLog.deleteMany({
@@ -260,6 +358,7 @@ async function cleanup() {
     db.booking.updateMany({ where: { rescheduledFromId: { in: bookingIds } }, data: { rescheduledFromId: null } }),
     db.booking.deleteMany({ where: { id: { in: bookingIds } } }),
     db.scheduleLock.deleteMany({ where: { id: { in: created.lockIds } } }),
+    db.consentRecord.deleteMany({ where: { userId: { in: userIds } } }),
     db.otpCode.deleteMany({ where: { phone: { in: created.phones } } }),
     db.rateLimit.deleteMany({ where: { key: { contains: "0990" } } }),
     db.user.deleteMany({ where: { id: { in: userIds } } }),

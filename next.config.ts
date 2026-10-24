@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["exceljs"],
   // Lets phones on the local network load the dev server (e.g. http://192.168.1.5:3000).
-  allowedDevOrigins: ["192.168.*.*", "10.*.*.*"],
+  allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],
   async headers() {
     return [
       {

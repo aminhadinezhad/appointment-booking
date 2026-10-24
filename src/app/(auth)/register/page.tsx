@@ -7,6 +7,7 @@ import * as React from "react";
 import { Controller, useForm } from "react-hook-form";
 import type { z } from "zod";
 import { AuthCard } from "@/components/auth/auth-card";
+import { TermsLink } from "@/components/legal/site-footer";
 import { GenderPicker } from "@/components/auth/gender-picker";
 import { OtpStep, type OtpRequestResponse } from "@/components/auth/otp-step";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,8 @@ export default function RegisterPage() {
 
   const form = useForm<FormInput, unknown, FormValues>({
     resolver: zodResolver(registerRequestSchema),
-    defaultValues: { fullName: "", phone: "" },
+    // The consent checkbox must start unticked.
+    defaultValues: { fullName: "", phone: "", acceptTerms: false },
   });
   const { errors, isSubmitting } = form.formState;
 
@@ -128,6 +130,26 @@ export default function RegisterPage() {
             <Input id="registeredAt" value={now} readOnly disabled className="pr-9" />
           </div>
         </Field>
+
+        <div className="space-y-1.5">
+          <label className="flex cursor-pointer items-start gap-2.5 text-sm leading-7">
+            <input
+              type="checkbox"
+              className="mt-1.5 size-4 shrink-0 accent-[var(--primary)]"
+              aria-invalid={!!errors.acceptTerms}
+              aria-describedby={errors.acceptTerms ? "acceptTerms-error" : undefined}
+              {...form.register("acceptTerms")}
+            />
+            <span>
+              <TermsLink href="/terms">قوانین و مقررات</TermsLink> و <TermsLink href="/privacy">حریم خصوصی</TermsLink> را خوانده‌ام و می‌پذیرم.
+            </span>
+          </label>
+          {errors.acceptTerms && (
+            <p id="acceptTerms-error" role="alert" className="text-xs font-medium text-destructive">
+              {errors.acceptTerms.message}
+            </p>
+          )}
+        </div>
 
         {formError && (
           <p role="alert" className="rounded-lg bg-destructive-soft px-3 py-2 text-sm text-destructive">
