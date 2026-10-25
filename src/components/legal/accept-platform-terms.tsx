@@ -8,7 +8,6 @@ import { useAdminLogout } from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { toFaDigits } from "@/lib/digits";
-import { SiteFooter } from "./site-footer";
 
 /** First-visit gate of the admin panel: the software terms must be accepted to continue. */
 export function AcceptPlatformTerms({
@@ -104,7 +103,6 @@ export function AcceptPlatformTerms({
           </Button>
         </div>
       </div>
-      <SiteFooter variant="admin" />
     </main>
   );
 }

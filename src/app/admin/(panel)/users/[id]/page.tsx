@@ -18,7 +18,6 @@ import { Switch } from "@/components/ui/switch";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { formatJalali, formatSlot, WEEKDAY_NAMES, weekdayOf } from "@/lib/dates";
 import { toFaDigits } from "@/lib/digits";
-import { CONSENT_CONTEXT_LABELS, LEGAL_DOCUMENT_LABELS } from "@/lib/legal-text";
 import { formatDateTime } from "@/lib/time";
 import type { UserDetail } from "@/lib/types";
 
@@ -141,32 +140,6 @@ export default function AdminUserDetailPage() {
                           <XCircle />
                         </Button>
                       )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>سوابق پذیرش قوانین</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {user.consents.length === 0 ? (
-                <p className="text-sm text-muted-foreground">سابقه‌ای ثبت نشده است.</p>
-              ) : (
-                <ul className="max-h-64 divide-y overflow-y-auto text-xs">
-                  {user.consents.map((c) => (
-                    <li key={c.id} className="flex flex-wrap justify-between gap-2 py-2">
-                      <span>
-                        {LEGAL_DOCUMENT_LABELS[c.document] ?? c.document} — نسخه {toFaDigits(c.version)}
-                        <span className="text-muted-foreground"> ({CONSENT_CONTEXT_LABELS[c.context] ?? c.context})</span>
-                      </span>
-                      <span className="text-muted-foreground">
-                        {formatDateTime(c.acceptedAt)}
-                        {c.ip ? <span className="ltr"> · {c.ip}</span> : null}
-                      </span>
                     </li>
                   ))}
                 </ul>

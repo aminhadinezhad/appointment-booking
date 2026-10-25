@@ -95,7 +95,6 @@ export interface UserDetail {
   notes: string | null;
   createdAt: string;
   bookings: BookingDTO[];
-  consents: { id: string; context: string; document: string; version: number; acceptedAt: string; ip: string | null }[];
 }
 
 export async function getUserDetail(id: string, clock: Clock = {}): Promise<UserDetail> {
@@ -107,7 +106,6 @@ export async function getUserDetail(id: string, clock: Clock = {}): Promise<User
         orderBy: [{ date: "desc" }, { hour: "desc" }],
         take: 200,
       },
-      consents: { orderBy: { acceptedAt: "desc" }, take: 200 },
     },
   });
   if (!user || user.role !== "USER") throw new AppError("NOT_FOUND");
@@ -120,14 +118,6 @@ export async function getUserDetail(id: string, clock: Clock = {}): Promise<User
     notes: user.notes,
     createdAt: user.createdAt.toISOString(),
     bookings: user.bookings.map((b) => toBookingDTO(b, clock.now)),
-    consents: user.consents.map((c) => ({
-      id: c.id,
-      context: c.context,
-      document: c.document,
-      version: c.version,
-      acceptedAt: c.acceptedAt.toISOString(),
-      ip: c.ip,
-    })),
   };
 }
 

@@ -175,8 +175,6 @@ async function main() {
       await user.goto(`${BASE}/home?date=${date}`);
       await user.getByRole("button", { name: new RegExp(`${toFaDigits("10:00")} تا ${toFaDigits("11:00")}، قابل رزرو`) }).click();
       await user.getByRole("dialog").getByText(formatJalaliLong(date)).waitFor();
-      // accepted at registration, so no terms notice when booking
-      expect(!(await user.getByRole("dialog").getByText(/به‌روزرسانی شده است/).count()), "no terms notice expected when booking");
       await user.getByRole("button", { name: "تأیید رزرو" }).click();
       await user.waitForURL(/\/bookings\/.+\/confirmed/, { timeout: 30_000 });
       await user.getByText("رزرو با موفقیت ثبت شد").waitFor();
@@ -298,7 +296,6 @@ async function main() {
       await user.getByText("در حال تغییر ساعت رزرو").waitFor();
       await user.getByRole("button", { name: new RegExp(`${toFaDigits("11:00")} تا ${toFaDigits("12:00")}، قابل رزرو`) }).click();
       await user.getByRole("dialog").getByText(formatJalaliLong(date), { exact: true }).waitFor();
-      expect(!(await user.getByRole("dialog").getByText(/به‌روزرسانی شده است/).count()), "no terms notice expected: the texts did not change");
       await user.getByRole("button", { name: "تأیید تغییر ساعت" }).click();
       await user.waitForURL(/\/confirmed\?changed=1/, { timeout: 30_000 });
       await user.getByText("ساعت رزرو با موفقیت تغییر کرد").waitFor();
@@ -317,7 +314,7 @@ async function main() {
       expect(row.status === "CANCELLED", "booking should be cancelled");
     });
 
-    await step("legal pages are public and linked from every page", async () => {
+    await step("legal pages are public and linked only where they belong", async () => {
       const page = await otherCtx.newPage();
       const pages = [
         ["/terms", "قوانین و مقررات"],
@@ -328,11 +325,23 @@ async function main() {
         await page.goto(`${BASE}${path}`);
         await page.getByRole("heading", { level: 1, name: title }).waitFor();
       }
-      for (const path of ["/", "/login", "/home"]) {
+      // the landing page is only for visitors (signed-in customers are sent to /home)
+      const visitor = await browser.newPage();
+      await visitor.goto(`${BASE}/`);
+      await visitor.getByRole("link", { name: "حریم خصوصی" }).waitFor();
+      await visitor.close();
+      for (const path of ["/home", "/profile"]) {
         await page.goto(`${BASE}${path}`);
-        await page.getByRole("contentinfo").getByRole("link", { name: "حریم خصوصی" }).waitFor();
+        await page.getByRole("heading", { level: 1 }).first().waitFor();
+        expect(!(await page.getByRole("link", { name: /حریم خصوصی/ }).count()), `no legal links on ${path}`);
       }
       await page.close();
+
+      for (const path of ["/admin", "/admin/settings"]) {
+        await admin.goto(`${BASE}${path}`);
+        await admin.getByRole("heading", { level: 1 }).first().waitFor();
+        expect(!(await admin.getByRole("link", { name: /حریم خصوصی|شرایط استفاده/ }).count()), `no legal links on ${path}`);
+      }
     });
 
     await step("admin pages render without client errors", async () => {

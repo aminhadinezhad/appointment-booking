@@ -1,7 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
-import { SiteFooter } from "@/components/legal/site-footer";
 
 export function AuthCard({
   title,
@@ -10,7 +9,6 @@ export function AuthCard({
   backHref = "/",
   children,
   footer,
-  legalVariant = "customer",
 }: {
   title: string;
   subtitle?: React.ReactNode;
@@ -18,7 +16,6 @@ export function AuthCard({
   backHref?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  legalVariant?: "customer" | "admin";
 }) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6 sm:justify-center">
@@ -37,8 +34,6 @@ export function AuthCard({
         {subtitle && <p className="mb-6 text-center text-sm text-muted-foreground">{subtitle}</p>}
         {children}
       </div>
-      {footer && <div className="mt-5 text-center text-sm text-muted-foreground">{footer}</div>}
-      <SiteFooter variant={legalVariant} className="mt-auto pt-6 sm:mt-0" />
-    </main>
+      {footer && <div className="mt-5 text-center text-sm text-muted-foreground">{footer}</div>}    </main>
   );
 }

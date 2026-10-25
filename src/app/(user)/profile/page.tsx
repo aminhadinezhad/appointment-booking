@@ -85,7 +85,7 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
-      {editing && <EditProfileDialog user={user} onClose={() => setEditing(false)} />}
+      {editing &&<EditProfileDialog user={user} onClose={() => setEditing(false)} />}
     </div>
   );
 }

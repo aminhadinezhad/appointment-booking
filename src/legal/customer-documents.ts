@@ -3,12 +3,11 @@
  * customers and accepted at registration.
  *
  * Changing a text: edit its content, bump its version and update effectiveDate.
- * Any change to the text changes its hash, so customers who accepted an older
- * text are asked once, at their next booking, to accept the new one.
+ * Registration records the version and hash of the exact text the customer accepted.
  */
 export const CUSTOMER_TERMS = {
-  version: 1,
-  effectiveDate: "1405/08/02",
+  version: 2,
+  effectiveDate: "1405/08/03",
   title: "قوانین و مقررات",
   content: `## ۱. پذیرش قوانین
 با ثبت‌نام یا ثبت نوبت در این سامانه، این قوانین را می‌پذیرید. خدمات توسط کسب‌وکار ارائه‌دهنده نوبت انجام می‌شود و این سامانه فقط ابزار ثبت نوبت است.
@@ -31,7 +30,7 @@ export const CUSTOMER_TERMS = {
 در صورت سوءاستفاده یا نقض این قوانین، کسب‌وکار می‌تواند حساب کاربری را غیرفعال کند.
 
 ## ۶. تغییر قوانین
-این قوانین ممکن است به‌روزرسانی شود. نسخه جدید در همین صفحه منتشر می‌شود و هنگام ثبت نوبت بعدی، پذیرش آن از شما خواسته خواهد شد.
+این قوانین ممکن است به‌روزرسانی شود. نسخه جدید در همین صفحه منتشر می‌شود و ادامه استفاده از سامانه پس از انتشار آن، به معنای پذیرش نسخه جدید است.
 
 ## ۷. قانون حاکم
 این قوانین تابع قوانین جمهوری اسلامی ایران است.`,

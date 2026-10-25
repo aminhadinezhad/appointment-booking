@@ -108,9 +108,6 @@ export const changePasswordSchema = z
 
 export const createBookingSchema = z.object({ date: dateKeySchema, hour: slotHourSchema });
 
-/** acceptTerms is sent only when the UI showed the updated-terms notice (see resolveBookingConsent). */
-export const bookingRequestSchema = createBookingSchema.extend({ acceptTerms: z.boolean().optional() });
-
 export const cancelBookingSchema = z.object({
   reason: z.string().trim().max(300, "حداکثر ۳۰۰ کاراکتر").optional(),
 });

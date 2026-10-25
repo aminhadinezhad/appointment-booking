@@ -10,13 +10,9 @@ import { audit } from "../audit";
 import { acquireScheduleLock, db, isUniqueViolation, TX_OPTIONS, type Tx } from "../db";
 import { AppError } from "../errors";
 import { activeBookingsForDate, activeLocksForDate } from "./schedule-data";
-import { acceptedVersionsOf, currentCustomerDocs, recordCustomerConsent } from "./legal";
 import { getSettings } from "./settings";
 
 export type Clock = { now?: Date };
-
-/** Request details stored as proof that the customer accepted the current terms and privacy texts. */
-export type ConsentInfo = { ip?: string | null; userAgent?: string | null };
 
 export type BookingDisplayStatus = "UPCOMING" | "IN_PROGRESS" | "HELD" | "CANCELLED";
 
@@ -115,18 +111,14 @@ async function runBookingTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
 }
 
 export async function createBooking(
-  input: { userId: string; dateKey: DateKey; hour: number; consent?: ConsentInfo },
+  input: { userId: string; dateKey: DateKey; hour: number },
   clock: Clock = {},
 ): Promise<Booking> {
   const now = clock.now ?? new Date();
-  const accepted = input.consent ? acceptedVersionsOf(currentCustomerDocs()) : null;
   return runBookingTx(async (tx) => {
     await acquireScheduleLock(tx, "shared");
     await assertActiveUser(tx, input.userId);
     const booking = await insertBooking(tx, { userId: input.userId, dateKey: input.dateKey, hour: input.hour, now });
-    if (accepted) {
-      await recordCustomerConsent(tx, { userId: input.userId, context: "BOOKING", versions: accepted, bookingId: booking.id, ...input.consent });
-    }
     await audit(tx, {
       actorId: input.userId,
       action: "BOOKING_CREATED",
@@ -177,11 +169,10 @@ export async function cancelBooking(
  * any reason, nothing changes.
  */
 export async function rescheduleBooking(
-  input: { userId: string; bookingId: string; dateKey: DateKey; hour: number; consent?: ConsentInfo },
+  input: { userId: string; bookingId: string; dateKey: DateKey; hour: number },
   clock: Clock = {},
 ): Promise<Booking> {
   const now = clock.now ?? new Date();
-  const accepted = input.consent ? acceptedVersionsOf(currentCustomerDocs()) : null;
   return runBookingTx(async (tx) => {
     await acquireScheduleLock(tx, "shared");
     await assertActiveUser(tx, input.userId);
@@ -205,9 +196,6 @@ export async function rescheduleBooking(
       now,
       rescheduledFromId: old.id,
     });
-    if (accepted) {
-      await recordCustomerConsent(tx, { userId: input.userId, context: "BOOKING", versions: accepted, bookingId: booking.id, ...input.consent });
-    }
     await audit(tx, {
       actorId: input.userId,
       action: "BOOKING_RESCHEDULED",

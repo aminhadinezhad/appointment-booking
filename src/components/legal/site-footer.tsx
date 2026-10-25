@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-/** Legal links shown at the bottom of every page. */
-export function SiteFooter({ variant = "customer", className }: { variant?: "customer" | "admin"; className?: string }) {
+/** Legal links at the bottom of the public landing page. */
+export function SiteFooter({ className }: { className?: string }) {
   return (
     <footer className={cn("flex flex-wrap items-center justify-center gap-x-3 gap-y-1 py-4 text-xs text-muted-foreground", className)}>
       <Link href="/terms" className="hover:text-primary hover:underline">
@@ -12,14 +12,6 @@ export function SiteFooter({ variant = "customer", className }: { variant?: "cus
       <Link href="/privacy" className="hover:text-primary hover:underline">
         حریم خصوصی
       </Link>
-      {variant === "admin" && (
-        <>
-          <span aria-hidden>·</span>
-          <Link href="/platform-terms" className="hover:text-primary hover:underline">
-            شرایط استفاده از نرم‌افزار
-          </Link>
-        </>
-      )}
     </footer>
   );
 }

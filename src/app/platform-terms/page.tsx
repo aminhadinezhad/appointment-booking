@@ -9,7 +9,6 @@ export default function PlatformTermsPage() {
   const terms = currentPlatformTerms();
   return (
     <LegalPage
-      variant="admin"
       title={terms.title}
       version={terms.version}
       dateLabel={`تاریخ اجرا ${toFaDigits(terms.effectiveDate)}`}

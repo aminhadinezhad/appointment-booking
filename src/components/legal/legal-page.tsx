@@ -2,21 +2,8 @@ import { ChevronRight, FileText } from "lucide-react";
 import Link from "next/link";
 import { toFaDigits } from "@/lib/digits";
 import { LegalDocument } from "./legal-document";
-import { SiteFooter } from "./site-footer";
 
-export function LegalPage({
-  title,
-  version,
-  dateLabel,
-  content,
-  variant = "customer",
-}: {
-  title: string;
-  version: number;
-  dateLabel: string;
-  content: string;
-  variant?: "customer" | "admin";
-}) {
+export function LegalPage({ title, version, dateLabel, content }: { title: string; version: number; dateLabel: string; content: string }) {
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 md:py-10">
       <Link href="/" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-primary">
@@ -37,7 +24,6 @@ export function LegalPage({
         </header>
         <LegalDocument content={content} />
       </article>
-      <SiteFooter variant={variant} />
     </main>
   );
 }

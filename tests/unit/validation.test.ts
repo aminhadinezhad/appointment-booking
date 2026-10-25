@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { parseLegalText } from "@/lib/legal-text";
 import { normalizePhone } from "@/lib/phone";
 import {
-  bookingRequestSchema,
   createBookingSchema,
   fullNameSchema,
   lockInputSchema,
@@ -115,10 +114,6 @@ describe("consent", () => {
     expect(registerRequestSchema.safeParse({ ...base, acceptTerms: false }).success).toBe(false);
     expect(registerRequestSchema.safeParse(base).success).toBe(false);
     expect(registerRequestSchema.safeParse({ ...base, acceptTerms: "true" }).success).toBe(false);
-    expect(bookingRequestSchema.safeParse({ date: "2026-10-25", hour: 9, acceptTerms: true }).success).toBe(true);
-    // at booking time consent is only needed after the texts change, so the flag is optional
-    expect(bookingRequestSchema.safeParse({ date: "2026-10-25", hour: 9 }).success).toBe(true);
-    expect(bookingRequestSchema.safeParse({ date: "2026-10-25", hour: 9, acceptTerms: "yes" }).success).toBe(false);
   });
 });
 

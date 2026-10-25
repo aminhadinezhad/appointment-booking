@@ -40,7 +40,6 @@ export interface Me {
   gender: Gender | null;
   notes: string | null;
   createdAt: string;
-  termsUpToDate: boolean;
 }
 
 export interface UserListItem {
@@ -63,7 +62,6 @@ export interface UserDetail {
   notes: string | null;
   createdAt: string;
   bookings: Booking[];
-  consents: { id: string; context: string; document: string; version: number; acceptedAt: string; ip: string | null }[];
 }
 
 type PersonRef = { id: string; fullName: string } | null;

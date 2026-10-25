@@ -34,7 +34,6 @@ export default function AdminLoginPage() {
 
   return (
     <AuthCard
-      legalVariant="admin"
       title="ورود مدیر"
       subtitle="لطفاً اطلاعات مدیر را وارد کنید"
       icon={

@@ -4,8 +4,7 @@
  * All texts and their versions live in code (src/legal):
  * - PLATFORM_TERMS: software terms between the provider and the business.
  *   Admins must accept the exact current text (version + hash) before using the panel.
- * - TERMS / PRIVACY: customer-facing documents. Customers accept them at
- *   registration, and once more at their next booking whenever the text changes.
+ * - TERMS / PRIVACY: customer-facing documents, accepted at registration.
  *
  * Consent rows are append-only and store the version and hash of the exact text
  * accepted, with time, IP and user agent, so they can serve as evidence.
@@ -142,30 +141,3 @@ export async function recordCustomerConsent(
   });
 }
 
-/** True when the user has accepted the current version of every customer document. */
-export async function hasAcceptedCustomerDocs(userId: string, docs: CustomerDocs = currentCustomerDocs()): Promise<boolean> {
-  const rows = await db.consentRecord.findMany({
-    where: {
-      userId,
-      OR: CUSTOMER_DOC_KINDS.map((kind) => ({ document: kind, version: docs[kind].version, contentHash: docs[kind].contentHash })),
-    },
-    select: { document: true },
-    distinct: ["document"],
-  });
-  return CUSTOMER_DOC_KINDS.every((kind) => rows.some((r) => r.document === kind));
-}
-
-/**
- * Consent at booking time. Customers accept the texts at registration, so a
- * booking needs consent only when the texts changed since. Returns the request
- * details to record with the booking, or undefined when the customer is
- * already up to date.
- */
-export async function resolveBookingConsent(
-  input: { userId: string; acceptTerms?: boolean; ip?: string | null; userAgent?: string | null },
-  docs: CustomerDocs = currentCustomerDocs(),
-): Promise<{ ip?: string | null; userAgent?: string | null } | undefined> {
-  if (await hasAcceptedCustomerDocs(input.userId, docs)) return undefined;
-  if (input.acceptTerms !== true) throw new AppError("TERMS_UPDATED");
-  return { ip: input.ip, userAgent: input.userAgent };
-}

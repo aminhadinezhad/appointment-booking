@@ -8,11 +8,8 @@ import {
   acceptPlatformTerms,
   currentCustomerDocs,
   currentPlatformTerms,
-  hasAcceptedCustomerDocs,
   hasAcceptedPlatformTerms,
   hashLegalText,
-  resolveBookingConsent,
-  type CustomerDocs,
 } from "@/server/services/legal";
 import { clock, createAdmin, createUser, expectAppError, setSettings, TOMORROW, TUESDAY } from "./helpers";
 
@@ -75,21 +72,12 @@ describe("admin acceptance of the software terms", () => {
   });
 });
 
-/** The current documents with the privacy text edited, as after a developer changes it. */
-function withUpdatedPrivacy(): CustomerDocs {
-  const docs = currentCustomerDocs();
-  const content = `${docs.PRIVACY.content}\n\nبند جدید`;
-  return {
-    ...docs,
-    PRIVACY: { ...docs.PRIVACY, version: docs.PRIVACY.version + 1, content, contentHash: hashLegalText(docs.PRIVACY.title, content) },
-  };
-}
-
 describe("customer documents", () => {
   it("come from code with a version and a hash of the exact text", () => {
     const docs = currentCustomerDocs();
-    expect(docs.TERMS).toMatchObject({ kind: "TERMS", version: 1, title: "قوانین و مقررات" });
-    expect(docs.PRIVACY).toMatchObject({ kind: "PRIVACY", version: 1, title: "حریم خصوصی" });
+    expect(docs.TERMS).toMatchObject({ kind: "TERMS", title: "قوانین و مقررات" });
+    expect(docs.PRIVACY).toMatchObject({ kind: "PRIVACY", title: "حریم خصوصی" });
+    expect(docs.TERMS.version).toBeGreaterThanOrEqual(1);
     expect(docs.TERMS.content.length).toBeGreaterThan(100);
     expect(docs.TERMS.contentHash).toBe(hashLegalText(docs.TERMS.title, docs.TERMS.content));
     expect(docs.TERMS.contentHash).not.toBe(docs.PRIVACY.contentHash);
@@ -98,6 +86,16 @@ describe("customer documents", () => {
 
 describe("customer consent", () => {
   const PHONE = "09127778899";
+
+  async function register() {
+    const { devCode } = await requestOtp({
+      phone: PHONE,
+      purpose: "REGISTER",
+      registration: { fullName: "سارا رضایی", gender: "FEMALE", acceptTerms: true },
+      ip: IP,
+    });
+    return verifyOtp({ phone: PHONE, purpose: "REGISTER", code: devCode!, ip: IP, userAgent: UA });
+  }
 
   it("registration requires ticking the checkbox", async () => {
     await expectAppError(
@@ -109,85 +107,33 @@ describe("customer consent", () => {
 
   it("records the accepted versions at registration", async () => {
     const shown = currentCustomerDocs();
-    const { devCode } = await requestOtp({
-      phone: PHONE,
-      purpose: "REGISTER",
-      registration: { fullName: "سارا رضایی", gender: "FEMALE", acceptTerms: true },
-      ip: IP,
-    });
-    const user = await verifyOtp({ phone: PHONE, purpose: "REGISTER", code: devCode!, ip: IP, userAgent: UA });
+    const user = await register();
 
     const rows = await db.consentRecord.findMany({ where: { userId: user.id }, orderBy: { document: "asc" } });
     expect(rows.map((r) => [r.context, r.document, r.version])).toEqual([
-      ["REGISTER", "PRIVACY", 1],
-      ["REGISTER", "TERMS", 1],
+      ["REGISTER", "PRIVACY", shown.PRIVACY.version],
+      ["REGISTER", "TERMS", shown.TERMS.version],
     ]);
     expect(rows[1]!.contentHash).toBe(shown.TERMS.contentHash);
     expect(rows[0]).toMatchObject({ ip: IP, userAgent: UA });
   });
 
-  it("records consent with each booking, inside the booking transaction", async () => {
-    const [user, other] = await Promise.all([createUser(), createUser()]);
-    const booking = await createBooking({ userId: user.id, dateKey: TOMORROW, hour: 9, consent: { ip: IP, userAgent: UA } }, clock);
-    const rows = await db.consentRecord.findMany({ where: { bookingId: booking.id } });
-    expect(rows).toHaveLength(2);
-    expect(rows.every((r) => r.context === "BOOKING" && r.userId === user.id && r.ip === IP)).toBe(true);
-
-    // a rejected booking leaves no consent rows behind
-    await expectAppError(createBooking({ userId: other.id, dateKey: TOMORROW, hour: 9, consent: { ip: IP } }, clock), "SLOT_TAKEN");
-    expect(await db.consentRecord.count({ where: { userId: other.id } })).toBe(0);
-
-    const moved = await rescheduleBooking({ userId: user.id, bookingId: booking.id, dateKey: TUESDAY, hour: 10, consent: { ip: IP } }, clock);
-    expect(await db.consentRecord.count({ where: { bookingId: moved.id, context: "BOOKING" } })).toBe(2);
-  });
-
-  it("asks for consent at booking only after the texts were updated", async () => {
-    const { devCode } = await requestOtp({
-      phone: PHONE,
-      purpose: "REGISTER",
-      registration: { fullName: "سارا رضایی", gender: "FEMALE", acceptTerms: true },
-      ip: IP,
-    });
-    const user = await verifyOtp({ phone: PHONE, purpose: "REGISTER", code: devCode!, ip: IP });
-
-    // accepted at registration: nothing to show or record at booking time
-    expect(await hasAcceptedCustomerDocs(user.id)).toBe(true);
-    expect(await resolveBookingConsent({ userId: user.id, ip: IP })).toBeUndefined();
-
-    // after the privacy text changes, the next booking must carry the acceptance
-    const updated = withUpdatedPrivacy();
-    expect(await hasAcceptedCustomerDocs(user.id, updated)).toBe(false);
-    await expectAppError(resolveBookingConsent({ userId: user.id, ip: IP }, updated), "TERMS_UPDATED");
-    expect(await resolveBookingConsent({ userId: user.id, acceptTerms: true, ip: IP, userAgent: UA }, updated)).toEqual({
-      ip: IP,
-      userAgent: UA,
-    });
-
-    // a booking made with consent records the current versions
-    const booking = await createBooking({ userId: user.id, dateKey: TOMORROW, hour: 9, consent: { ip: IP } }, clock);
-    const rows = await db.consentRecord.findMany({ where: { bookingId: booking.id }, orderBy: { document: "asc" } });
-    expect(rows.map((r) => [r.document, r.version])).toEqual([
-      ["PRIVACY", 1],
-      ["TERMS", 1],
-    ]);
-  });
-
-  it("treats customers without any consent record (e.g. imported) as needing consent", async () => {
-    const user = await createUser();
-    expect(await hasAcceptedCustomerDocs(user.id)).toBe(false);
-    await expectAppError(resolveBookingConsent({ userId: user.id }), "TERMS_UPDATED");
+  it("does not ask for or record consent when booking", async () => {
+    const user = await createUser(); // e.g. imported, without any consent record
+    const booking = await createBooking({ userId: user.id, dateKey: TOMORROW, hour: 9 }, clock);
+    await rescheduleBooking({ userId: user.id, bookingId: booking.id, dateKey: TUESDAY, hour: 10 }, clock);
+    expect(await db.consentRecord.count({ where: { userId: user.id } })).toBe(0);
   });
 
   it("exports consent records to Excel", async () => {
     const admin = await createAdmin();
     await acceptPlatformTerms({ userId: admin.id, version: currentPlatformTerms().version, ip: IP, userAgent: UA });
-    const user = await createUser({ fullName: "علی محمدی", phone: "09121112222" });
-    await createBooking({ userId: user.id, dateKey: TOMORROW, hour: 9, consent: { ip: IP } }, clock);
+    await register();
 
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load((await buildExportWorkbook({ sections: ["consents"] }, clock)) as unknown as ArrayBuffer);
     const sheet = wb.getWorksheet("سوابق پذیرش قوانین")!;
-    expect(sheet.rowCount).toBe(4); // header + admin terms + 2 booking documents
+    expect(sheet.rowCount).toBe(4); // header + admin terms + 2 registration documents
     const values = [2, 3, 4].map((r) => sheet.getRow(r).getCell(6).value);
     expect(values).toContain("شرایط استفاده از نرم‌افزار");
     expect(values).toContain("قوانین و مقررات");
