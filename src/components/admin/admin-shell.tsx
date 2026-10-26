@@ -17,6 +17,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
+import { GlassTabBar } from "@/components/glass-nav";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -113,27 +114,20 @@ export function AdminShell({ adminName, children }: { adminName: string; childre
         </div>
       )}
 
-      <main className="min-w-0 px-4 pb-24 pt-5 md:px-6 lg:px-8 lg:pb-10 lg:pt-8">
+      <main className="min-w-0 px-4 pb-32 pt-5 md:px-6 lg:px-8 lg:pb-10 lg:pt-8">
         {children}
       </main>
 
-      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 backdrop-blur lg:hidden" aria-label="منوی پایین">
-        <div className="grid h-16 grid-cols-5">
-          {ADMIN_NAV.filter((n) => n.mobile).map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center justify-center gap-1 text-[10px] font-medium",
-                isActive(item.href) ? "text-primary" : "text-muted-foreground",
-              )}
-            >
-              <item.icon className="size-5" />
-              {"short" in item ? item.short : item.label}
-            </Link>
-          ))}
-        </div>
-      </nav>
+      <GlassTabBar
+        label="منوی پایین"
+        className="lg:hidden"
+        items={ADMIN_NAV.filter((n) => n.mobile).map((item) => ({
+          href: item.href,
+          label: "short" in item ? item.short : item.label,
+          icon: item.icon,
+          active: isActive(item.href),
+        }))}
+      />
     </div>
   );
 }
