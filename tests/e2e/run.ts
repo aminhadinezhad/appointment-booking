@@ -175,8 +175,17 @@ async function main() {
       await user.goto(`${BASE}/home?date=${date}`);
       await user.getByRole("button", { name: new RegExp(`${toFaDigits("10:00")} تا ${toFaDigits("11:00")}، قابل رزرو`) }).click();
       await user.getByRole("dialog").getByText(formatJalaliLong(date)).waitFor();
+      // regression: once the booking succeeds the slot becomes "mine"; the open dialog must not turn into "change time"
+      await user.evaluate(() => {
+        const w = window as unknown as { sawMoveDialog: boolean };
+        w.sawMoveDialog = false;
+        new MutationObserver(() => {
+          if (document.querySelector('[role="dialog"]')?.textContent?.includes("تغییر ساعت رزرو")) w.sawMoveDialog = true;
+        }).observe(document.body, { subtree: true, childList: true, characterData: true });
+      });
       await user.getByRole("button", { name: "تأیید رزرو" }).click();
       await user.waitForURL(/\/bookings\/.+\/confirmed/, { timeout: 30_000 });
+      expect(!(await user.evaluate(() => (window as unknown as { sawMoveDialog: boolean }).sawMoveDialog)), "booking dialog switched to «change time» after confirming");
       await user.getByText("رزرو با موفقیت ثبت شد").waitFor();
       const consents = await db.consentRecord.findMany({ where: { user: { phone: phoneA } } });
       const contexts = consents.map((c) => `${c.context}:${c.document}`).sort().join();

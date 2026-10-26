@@ -17,7 +17,10 @@ import { apiFetch, ApiError, errorMessage, toQuery } from "@/lib/api-client";
 import { formatJalaliLong, formatSlot, shiftJalaliMonth, toJalali } from "@/lib/dates";
 import type { Booking, DaySummary, SlotView } from "@/lib/types";
 
-const REFRESH_CODES = new Set(["SLOT_TAKEN", "SLOT_LOCKED", "SLOT_IN_PAST", "SLOT_NOT_BOOKABLE", "ONE_BOOKING_PER_DAY", "BOOKING_NOT_ACTIVE"]);
+type Moving = { id: string; dateKey: string; hour: number };
+type Pending = { dateKey: string; hour: number; moving: Moving | null };
+
+const REFRESH_CODES =new Set(["SLOT_TAKEN", "SLOT_LOCKED", "SLOT_IN_PAST", "SLOT_NOT_BOOKABLE", "ONE_BOOKING_PER_DAY", "BOOKING_NOT_ACTIVE"]);
 
 export function HomeClient({
   firstName,
@@ -39,7 +42,9 @@ export function HomeClient({
   });
   const [selected, setSelected] = React.useState(initialDate);
   const [showAll, setShowAll] = React.useState(false);
-  const [pending, setPending] = React.useState<SlotView | null>(null);
+  // The slot being confirmed, with the booking it would replace (if any) fixed at the moment it
+  // was picked: refetching after the booking succeeds must not turn the open dialog into a move.
+  const [pending, setPending] = React.useState<Pending | null>(null);
 
   const calendar = useQuery({
     queryKey: ["calendar", month.jy, month.jm],
@@ -70,13 +75,13 @@ export function HomeClient({
   };
 
   const mutation = useMutation({
-    mutationFn: (slot: SlotView) => {
-      const body = { date: selected, hour: slot.hour };
+    mutationFn: ({ dateKey, hour, moving }: Pending) => {
+      const body = { date: dateKey, hour };
       return moving
         ? apiFetch<{ booking: Booking }>(`/api/bookings/${moving.id}/reschedule`, { body })
         : apiFetch<{ booking: Booking }>("/api/bookings", { body });
     },
-    onSuccess: ({ booking }) => {
+    onSuccess: ({ booking }, { moving }) => {
       refresh();
       router.push(`/bookings/${booking.id}/confirmed${moving ? "?changed=1" : ""}`);
     },
@@ -86,6 +91,9 @@ export function HomeClient({
       if (error instanceof ApiError && REFRESH_CODES.has(error.code)) refresh();
     },
   });
+
+  // After success the dialog stays open until the confirmation page loads; keep it locked meanwhile.
+  const busy = mutation.isPending || mutation.isSuccess;
 
   function dayProps(dateKey: string): CalendarDayProps {
     const d = summaries.get(dateKey);
@@ -194,7 +202,7 @@ export function HomeClient({
                 selectedHour={pending?.hour}
                 onPick={(slot) => {
                   if (slot.state === "MINE" && slot.bookingId) router.push(`/bookings/${slot.bookingId}`);
-                  else setPending(slot);
+                  else setPending({ dateKey: selected, hour: slot.hour, moving });
                 }}
               />
             )}
@@ -203,27 +211,27 @@ export function HomeClient({
         </Card>
       </div>
 
-      <Dialog open={!!pending} onOpenChange={(open) => !open && !mutation.isPending && setPending(null)}>
+      <Dialog open={!!pending} onOpenChange={(open) => !open && !busy && setPending(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{moving ? "تغییر ساعت رزرو" : "تأیید رزرو"}</DialogTitle>
+            <DialogTitle>{pending?.moving ? "تغییر ساعت رزرو" : "تأیید رزرو"}</DialogTitle>
             <DialogDescription>
-              {moving ? "رزرو فعلی شما لغو و رزرو جدید به‌صورت هم‌زمان ثبت می‌شود." : "لطفاً اطلاعات رزرو را بررسی و تأیید کنید."}
+              {pending?.moving ? "رزرو فعلی شما لغو و رزرو جدید به‌صورت هم‌زمان ثبت می‌شود." : "لطفاً اطلاعات رزرو را بررسی و تأیید کنید."}
             </DialogDescription>
           </DialogHeader>
           {pending && (
             <dl className="divide-y rounded-xl border text-sm">
-              {moving && (
+              {pending.moving && (
                 <div className="flex justify-between gap-3 px-4 py-3">
                   <dt className="text-muted-foreground">زمان فعلی</dt>
                   <dd className="font-medium text-muted-foreground line-through">
-                    {formatJalaliLong(moving.dateKey)}، {formatSlot(moving.hour)}
+                    {formatJalaliLong(pending.moving.dateKey)}، {formatSlot(pending.moving.hour)}
                   </dd>
                 </div>
               )}
               <div className="flex justify-between gap-3 px-4 py-3">
                 <dt className="text-muted-foreground">تاریخ</dt>
-                <dd className="font-semibold">{formatJalaliLong(selected)}</dd>
+                <dd className="font-semibold">{formatJalaliLong(pending.dateKey)}</dd>
               </div>
               <div className="flex justify-between gap-3 px-4 py-3">
                 <dt className="text-muted-foreground">ساعت</dt>
@@ -232,10 +240,10 @@ export function HomeClient({
             </dl>
           )}
           <DialogFooter>
-            <Button onClick={() => pending && mutation.mutate(pending)} loading={mutation.isPending} className="sm:min-w-32">
-              {moving ? "تأیید تغییر ساعت" : "تأیید رزرو"}
+            <Button onClick={() => pending && mutation.mutate(pending)} loading={busy} className="sm:min-w-32">
+              {pending?.moving ? "تأیید تغییر ساعت" : "تأیید رزرو"}
             </Button>
-            <Button variant="outline" onClick={() => setPending(null)} disabled={mutation.isPending}>
+            <Button variant="outline" onClick={() => setPending(null)} disabled={busy}>
               انصراف
             </Button>
           </DialogFooter>
